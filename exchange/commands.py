@@ -22,6 +22,7 @@ import dateutil.parser
 from icalendar import Calendar, Event, Alarm
 
 from exchange import ExchangeException
+from exchange.timezones import EST
 
 
 class ExchangeCommand(object):
@@ -95,12 +96,13 @@ class FetchCalendar(ExchangeCommand):
 
     sql = """
         SELECT
+            PidLidAllAttendeesString                 AS attendees,
             "urn:schemas:calendar:location"          AS location,
+            "urn:schemas:calendar:organizer"         AS organizer,
+            "urn:schemas:calendar:meetingstatus"     AS status,
             "urn:schemas:httpmail:normalizedsubject" AS subject,
             "urn:schemas:calendar:dtstart"           AS start_date,
             "urn:schemas:calendar:dtend"             AS end_date,
-            "urn:schemas:calendar:busystatus"        AS busy_status,
-            "urn:schemas:calendar:instancetype"      AS instance_type,
             "urn:schemas:calendar:timezone"          AS timezone_info,
             "urn:schemas:httpmail:textdescription"   AS description
         FROM

@@ -18,7 +18,7 @@ from exchange.authenticators import CookieAuthenticator
 
 class CalendarHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        print('> GET CALENDARS')
+        print('* Fetching Calendars')
 
         fetcher = FetchCalendar(self.server.exchange_server)
         authenticator = CookieAuthenticator(self.server.exchange_server)
@@ -27,7 +27,11 @@ class CalendarHandler(BaseHTTPRequestHandler):
         fetcher.authenticator = authenticator
 
         calendar = fetcher.execute()
-        self.wfile.write(calendar.as_string()).close()
+        self.wfile.write(calendar.as_string())
+
+        # This seems to work on Linux but not Mac OS. ~mcrute
+        if hasattr(self.wfile, 'close'):
+            self.wfile.close()
 
 
 def get_un_pass(config):
@@ -49,7 +53,8 @@ def get_host_port(config):
 
 
 def main(config_file='exchange.cfg'):
-    config = ConfigParser().read(config_file)
+    config = ConfigParser()
+    config.read(config_file)
     server_cfg = get_host_port(config)
 
     print('Exchange iCal Proxy Running on port {0:d}'.format(server_cfg[1]))
