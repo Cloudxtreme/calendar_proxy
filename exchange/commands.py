@@ -4,7 +4,6 @@ Exchange Commands
 
 @author: Mike Crute (mcrute@gmail.com)
 @date: November 10, 2008
-@version: $Revision$
 
 This is a set of classes that starts to define a set of classes for
 fetching data using Exchange's WebDAV API. This is still pretty

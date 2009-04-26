@@ -5,7 +5,6 @@ Exchange Server Handling Code
 @author: Mike Crute (mcrute@gmail.com)
 @organization: SoftGroup Interactive, Inc.
 @date: April 26, 2009
-@version: $Rev$
 
 $Id$
 """
