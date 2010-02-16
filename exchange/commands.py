@@ -3,6 +3,7 @@
 Exchange Commands
 
 @author: Mike Crute (mcrute@gmail.com)
+@organization: American Greetings Interactive
 @date: November 10, 2008
 
 This is a set of classes that starts to define a set of classes for
@@ -11,85 +12,17 @@ development code but it does the trick. Watch out, it doesn't consider
 many corner cases.
 """
 
-import xml.etree.cElementTree as ElementTree
 import dateutil.parser as date_parser
+import xml.etree.cElementTree as ElementTree
 
-from httplib import HTTPSConnection
 from string import Template
+from httplib import HTTPSConnection
 from datetime import datetime, timedelta
-from icalendar import Calendar, Event as _Event, Alarm
 from exchange import ExchangeException, EST
-
-
-class ExchangeCommand(object):
-    """
-    Base class for Exchange commands. This really shouldn't be constructed
-    directly but should be subclassed to do useful things.
-    """
-
-    #: Base URL for Exchange commands.
-    BASE_URL = Template("/exchange/${username}/${method}")
-
-    #: Basic headers that are required for all requests
-    BASE_HEADERS = {
-       "Content-Type": 'text/xml; charset="UTF-8"',
-       "Depth": "0",
-       "Translate": "f",
-       }
-
-    def __init__(self, session):
-        self.server = session.server
-        self.session = session
-
-    def _get_xml(self, **kwargs):
-        """
-        Try to get an XML response from the server.
-        @return: ElementTree response
-        """
-        kwargs["username"] = self.session.username
-
-        xml = self._get_query(**kwargs)
-        url = self.BASE_URL.substitute({ "username": self.session.username,
-                                         "method": self.exchange_method })
-        query = Template(xml).substitute(kwargs)
-        send_headers = self.BASE_HEADERS.copy()
-        send_headers['Cookie'] = self.session.token
-
-        conn = HTTPSConnection(self.server)
-        conn.request(self.dav_method.upper(), url, query, headers=send_headers)
-        resp = conn.getresponse()
-
-        if int(resp.status) > 299 or int(resp.status) < 200:
-            raise ExchangeException("%s %s" % (resp.status, resp.reason))
-
-        return ElementTree.fromstring(resp.read())
-
-    def _get_query(self, **kwargs):
-        """
-        Build up the XML query for the server. Mostly just does a lot
-        of template substitutions, also does a little bit of elementtree
-        magic to to build the XML query.
-        """
-        declaration = ElementTree.ProcessingInstruction("xml", 'version="1.0"')
-
-        request = ElementTree.Element("g:searchrequest", { "xmlns:g": "DAV:" })
-        query = ElementTree.SubElement(request, "g:sql")
-        query.text = Template(self.sql).substitute(kwargs)
-
-        output = ElementTree.tostring(declaration)
-        output += ElementTree.tostring(request)
-
-        return output
+from icalendar import Calendar, Event as _Event
 
 
 class Event(_Event):
-
-    def add_alarm(self, alarm_offset):
-        alarm = Alarm()
-        alarm.add("action", "DISPLAY")
-        alarm.add("description", "REMINDER")
-        alarm.add("trigger", timedelta(minutes=alarm_offset))
-        self.add_component(alarm)
 
     def _get_element_text(self, element, key):
         value = element.find(key)
@@ -110,9 +43,84 @@ class Event(_Event):
         self.add(add_as, value)
 
 
+class ExchangeRequest(object):
+
+    def __init__(self, session, service, method='GET'):
+        self.session = session
+        self.service = service
+        self.method = method
+        self.server = session.server
+        self.username = session.username
+        self._headers = { 'Content-Type': 'text/xml',
+                         'Depth': '0', 'Translate': 'f' }
+
+    @property
+    def headers(self):
+        self._headers['Cookie'] = self.session.token
+        return self._headers
+
+    @property
+    def request_url(self):
+        path = '/'.join(['exchange', self.username, self.service])
+        return '/{0}'.format(path)
+
+    def get_response(self, query=None):
+        connection = HTTPSConnection(self.server)
+        connection.request(self.method, self.request_url, query,
+                            headers=self.headers)
+        resp = connection.getresponse()
+
+        if int(resp.status) > 299 or int(resp.status) < 200:
+            raise ExchangeException("%s %s" % (resp.status, resp.reason))
+
+        return resp.read()
+
+
+class ExchangeCommand(object):
+    """
+    Base class for Exchange commands. This really shouldn't be constructed
+    directly but should be subclassed to do useful things.
+    """
+
+    def __init__(self, session):
+        self.session = session
+
+    def _get_xml(self, **kwargs):
+        """
+        Try to get an XML response from the server.
+        @return: ElementTree response
+        """
+        kwargs["username"] = self.session.username
+        xml = self._get_query(**kwargs)
+
+        req = ExchangeRequest(self.session, self.exchange_method,
+                                    self.dav_method)
+        resp = req.get_response(Template(xml).substitute(kwargs))
+
+        return ElementTree.fromstring(resp)
+
+    def _get_query(self, **kwargs):
+        """
+        Build up the XML query for the server. Mostly just does a lot
+        of template substitutions, also does a little bit of elementtree
+        magic to to build the XML query.
+        """
+        declaration = ElementTree.ProcessingInstruction("xml", 'version="1.0"')
+
+        request = ElementTree.Element("g:searchrequest", { "xmlns:g": "DAV:" })
+        query = ElementTree.SubElement(request, "g:sql")
+        query.text = Template(self.sql).substitute(kwargs)
+
+        output = ElementTree.tostring(declaration)
+        output += ElementTree.tostring(request)
+
+        return output
+
+
 class FetchCalendar(ExchangeCommand):
+
     exchange_method = "calendar"
-    dav_method = "search"
+    dav_method = "SEARCH"
 
     sql = """
         SELECT
@@ -147,9 +155,6 @@ class FetchCalendar(ExchangeCommand):
             event.add_text(item, 'description')
             event.add_date(item, 'start_date', add_as='dtstart')
             event.add_date(item, 'end_date', add_as='dtend')
-
-            # TODO: Handle timezone_info
-            # TODO: Handle alarms. Previous implementation didn't work
 
             calendar.add_component(event)
 
