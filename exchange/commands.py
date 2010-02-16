@@ -11,17 +11,14 @@ development code but it does the trick. Watch out, it doesn't consider
 many corner cases.
 """
 
-import xml.etree.cElementTree as etree
+import xml.etree.cElementTree as ElementTree
+import dateutil.parser as date_parser
 
 from httplib import HTTPSConnection
 from string import Template
 from datetime import datetime, timedelta
-
-import dateutil.parser
-from icalendar import Calendar, Event, Alarm
-
-from exchange import ExchangeException
-from exchange.timezones import EST
+from icalendar import Calendar, Event as _Event, Alarm
+from exchange import ExchangeException, EST
 
 
 class ExchangeCommand(object):
@@ -40,36 +37,32 @@ class ExchangeCommand(object):
        "Translate": "f",
        }
 
-    def __init__(self, server, authenticator=None):
-        self.server = server
-        self.authenticator = authenticator
+    def __init__(self, session):
+        self.server = session.server
+        self.session = session
 
     def _get_xml(self, **kwargs):
         """
         Try to get an XML response from the server.
         @return: ElementTree response
         """
-        if not self.authenticator.authenticated:
-            raise ExchangeException("Not authenticated. Call authenticate() first.")
-
-        # Lets forcibly override the username with the user we're querying as
-        kwargs["username"] = self.authenticator.username
+        kwargs["username"] = self.session.username
 
         xml = self._get_query(**kwargs)
-        url = self.BASE_URL.substitute({ "username": self.authenticator.username,
+        url = self.BASE_URL.substitute({ "username": self.session.username,
                                          "method": self.exchange_method })
         query = Template(xml).substitute(kwargs)
-        send_headers = self.authenticator.patch_headers(self.BASE_HEADERS)
+        send_headers = self.BASE_HEADERS.copy()
+        send_headers['Cookie'] = self.session.token
 
         conn = HTTPSConnection(self.server)
         conn.request(self.dav_method.upper(), url, query, headers=send_headers)
         resp = conn.getresponse()
 
-        # TODO: Lets determine authentication errors here and fix them.
         if int(resp.status) > 299 or int(resp.status) < 200:
             raise ExchangeException("%s %s" % (resp.status, resp.reason))
 
-        return etree.fromstring(resp.read())
+        return ElementTree.fromstring(resp.read())
 
     def _get_query(self, **kwargs):
         """
@@ -77,16 +70,44 @@ class ExchangeCommand(object):
         of template substitutions, also does a little bit of elementtree
         magic to to build the XML query.
         """
-        declaration = etree.ProcessingInstruction("xml", 'version="1.0"')
+        declaration = ElementTree.ProcessingInstruction("xml", 'version="1.0"')
 
-        request = etree.Element("g:searchrequest", { "xmlns:g": "DAV:" })
-        query = etree.SubElement(request, "g:sql")
+        request = ElementTree.Element("g:searchrequest", { "xmlns:g": "DAV:" })
+        query = ElementTree.SubElement(request, "g:sql")
         query.text = Template(self.sql).substitute(kwargs)
 
-        output = etree.tostring(declaration)
-        output += etree.tostring(request)
+        output = ElementTree.tostring(declaration)
+        output += ElementTree.tostring(request)
 
         return output
+
+
+class Event(_Event):
+
+    def add_alarm(self, alarm_offset):
+        alarm = Alarm()
+        alarm.add("action", "DISPLAY")
+        alarm.add("description", "REMINDER")
+        alarm.add("trigger", timedelta(minutes=alarm_offset))
+        self.add_component(alarm)
+
+    def _get_element_text(self, element, key):
+        value = element.find(key)
+
+        if hasattr(value, 'text'):
+            return value.text
+
+    def add_text(self, element, key, add_as=None):
+        value = self._get_element_text(element, key)
+
+        add_as = key if not add_as else add_as
+        self.add(add_as, value)
+
+    def add_date(self, element, key, add_as=None):
+        value = date_parser.parse(self._get_element_text(element, key))
+
+        add_as = key if not add_as else add_as
+        self.add(add_as, value)
 
 
 class FetchCalendar(ExchangeCommand):
@@ -119,45 +140,16 @@ class FetchCalendar(ExchangeCommand):
 
         for item in exchange_xml.getchildren():
             item = item.find("{DAV:}propstat").find("{DAV:}prop")
+
             event = Event()
+            event.add_text(item, 'subject', add_as='summary')
+            event.add_text(item, 'location')
+            event.add_text(item, 'description')
+            event.add_date(item, 'start_date', add_as='dtstart')
+            event.add_date(item, 'end_date', add_as='dtend')
 
-            # These tests may look funny but the result of item.find
-            # does NOT evaluate to true even though it is not None
-            # so, we have to check the interface of the returned item
-            # to make sure its usable.
-
-            subject = item.find("subject")
-            if hasattr(subject, "text"):
-                event.add("summary", subject.text)
-
-            location = item.find("location")
-            if hasattr(location, "text"):
-                event.add("location", location.text)
-
-            description = item.find("description")
-            if hasattr(description, "text"):
-                event.add("description", description.text)
-
-            # Dates should always exist
-            start_date = dateutil.parser.parse(item.find("start_date").text)
-            event.add("dtstart", start_date)
-
-            end_date = dateutil.parser.parse(item.find("end_date").text)
-            event.add("dtend", end_date)
-
-            if item.get("timezone_info"):
-                """This comes back from Exchange as already formatted
-                ical data. We probably need to parse and re-construct
-                it unless the icalendar api lets us just dump it out.
-                """
-                pass
-
-            if alarms and start_date > datetime.now(tz=EST()):
-                alarm = Alarm()
-                alarm.add("action", "DISPLAY")
-                alarm.add("description", "REMINDER")
-                alarm.add("trigger", timedelta(minutes=alarm_offset))
-                event.add_component(alarm)
+            # TODO: Handle timezone_info
+            # TODO: Handle alarms. Previous implementation didn't work
 
             calendar.add_component(event)
 
