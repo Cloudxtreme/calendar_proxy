@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
+# vim: set filencoding=utf8
 """
 Exchange Calendar Proxy Server
 
 @author: Mike Crute (mcrute@gmail.com)
 @organization: SoftGroup Interactive, Inc.
 @date: April 26, 2009
-
-$Id$
 """
+
 from getpass import getpass
 from ConfigParser import ConfigParser
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
@@ -17,6 +16,7 @@ from exchange.authenticators import CookieAuthenticator
 
 
 class CalendarHandler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         print('* Fetching Calendars')
 
@@ -34,34 +34,22 @@ class CalendarHandler(BaseHTTPRequestHandler):
             self.wfile.close()
 
 
-def get_un_pass(config):
-    username = config.get('exchange', 'user')
-
-    if config.has_option('exchange', 'password'):
-        password = config.get('exchange', 'password')
-    else:
-        password = getpass('Exchange Password: ')
-
-    return username, password
-
-
-def get_host_port(config):
-    bind_address = config.get('local_server', 'address')
-    bind_port = int(config.get('local_server', 'port'))
-
-    return bind_address, bind_port
-
-
 def main(config_file='exchange.cfg'):
     config = ConfigParser()
     config.read(config_file)
-    server_cfg = get_host_port(config)
+    bind_address = config.get('local_server', 'address')
+    bind_port = int(config.get('local_server', 'port'))
 
-    print('Exchange iCal Proxy Running on port {0:d}'.format(server_cfg[1]))
+    print('Exchange iCal Proxy Running on port {0:d}'.format(bind_port))
 
-    server = HTTPServer(server_cfg, CalendarHandler)
+    server = HTTPServer((bind_address, bind_port), CalendarHandler)
     server.exchange_server = config.get('exchange', 'server')
-    server.user, server.password = get_un_pass(config)
+    server.user = config.get('exchange', 'user')
+
+    if config.has_option('exchange', 'password'):
+        server.password = config.get('exchange', 'password')
+    else:
+        server.password = getpass('Exchange Password: ')
 
     try:
         server.serve_forever()

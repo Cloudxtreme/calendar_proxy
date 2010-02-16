@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# vim: set filencoding=utf8
 """
 Exchange Commands
 
@@ -9,9 +9,8 @@ This is a set of classes that starts to define a set of classes for
 fetching data using Exchange's WebDAV API. This is still pretty
 development code but it does the trick. Watch out, it doesn't consider
 many corner cases.
-
-$Id$
 """
+
 import xml.etree.cElementTree as etree
 
 from httplib import HTTPSConnection

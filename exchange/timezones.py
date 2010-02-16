@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
+# vim: set filencoding=utf8
 """
 Timezone Definitions
 
 @author: Mike Crute (mcrute@gmail.com)
 @organization: SoftGroup Interactive, Inc.
 @date: April 26, 2009
-
-$Id$
 """
+
 from datetime import tzinfo, timedelta
 
 
