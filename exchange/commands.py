@@ -3,7 +3,7 @@
 Exchange Commands
 
 @author: Mike Crute (mcrute@gmail.com)
-@organization: American Greetings Interactive
+@organization: SoftGroup Interactive, Inc.
 @date: November 10, 2008
 
 This is a set of classes that starts to define a set of classes for

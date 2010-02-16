@@ -3,7 +3,7 @@
 Calendar WSGI App
 
 @author: Mike Crute (mcrute@ag.com)
-@organization: American Greetings Interactive
+@organization: SoftGroup Interactive, Inc.
 @date: February 15, 2010
 """
 
