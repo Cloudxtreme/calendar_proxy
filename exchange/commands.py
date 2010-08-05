@@ -119,7 +119,7 @@ class Event(_Event):
             raise InvalidEventError()
 
         delta = self.end_date - self.start_date
-        if delta.days > 1:
+        if delta.days >= 1:
             start_date = date(self.start_date.year, self.start_date.month, self.start_date.day)
             end_date = date(self.end_date.year, self.end_date.month, self.end_date.day)
         else:
