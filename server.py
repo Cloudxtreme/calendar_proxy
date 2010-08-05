@@ -8,18 +8,20 @@ Exchange Calendar Proxy Server
 @date: April 26, 2009
 """
 
+from os import path
 from util import config_dict
 from exchange.wsgi import CalendarApp
 from wsgiref.simple_server import make_server
 
 
 def main():
-    config = config_dict('exchange.cfg')
+    config = config_dict(path.expanduser('~/.exchange.cfg'))
+    password = open(path.expanduser('~/.exchange.pass'), 'r').read()
 
     try:
         app = CalendarApp(config['exchange']['server'],
                           config['exchange']['user'],
-                          config['exchange']['password'])
+                          password)
 
         make_server(config['local_server']['address'],
                     config['local_server']['port'], app).serve_forever()
