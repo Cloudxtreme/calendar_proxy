@@ -12,17 +12,69 @@ development code but it does the trick. Watch out, it doesn't consider
 many corner cases.
 """
 
+import re
+
 import dateutil.parser as date_parser
 import xml.etree.cElementTree as ElementTree
 
 from string import Template
 from httplib import HTTPSConnection
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date, tzinfo
 from exchange import ExchangeException, EST
-from icalendar import Calendar, Event as _Event
+from icalendar import Calendar, Event as _Event, Alarm
+from icalendar import vCalAddress, vText
+
+
+class InvalidEventError(Exception):
+    pass
+
+
+class Organizer(object):
+
+    def __init__(self, cn, email):
+        self.cn = cn
+        self.email = email
+
+    def __repr__(self):
+        return u"vCalAddress(%s)" % str.__repr__(self)
+
+    def ical(self):
+        return "CN=%s:%s" % (self.cn, self.email)
+
+    def __str__(self):
+        return self.ical()
+
+
+class EST(tzinfo):
+
+    def tzname(self, dt):
+        return "EST"
+
+    def utcoffset(self, dt):
+        return timedelta(0)
+
+    dst = utcoffset
+
+
+class EmailParser(object):
+
+    EXCHANGE_FORMAT = re.compile("([^<]*)<([^>]*)>")
+
+    def parse(self, email):
+        if not email:
+            return
+
+        match = self.EXCHANGE_FORMAT.match(email)
+        if match:
+            return match.groups()
 
 
 class Event(_Event):
+
+    def __init__(self):
+        super(Event, self).__init__()
+        self.start_date = None
+        self.end_date = None
 
     def _get_element_text(self, element, key):
         value = element.find(key)
@@ -36,11 +88,53 @@ class Event(_Event):
         add_as = key if not add_as else add_as
         self.add(add_as, value)
 
+    def add_organizer(self, element):
+        value = self._get_element_text(element, 'organizer')
+
+        parsed = EmailParser().parse(value)
+        if not parsed:
+            return
+
+        name = parsed[0].strip().strip('"')
+
+        organizer = vCalAddress('MAILTO:%s' % parsed[1])
+        organizer.params['cn'] = vText(name)
+        organizer.params['ROLE'] = vText('CHAIR')
+
+        self.add('organizer', organizer, encode=0)
+
     def add_date(self, element, key, add_as=None):
         value = date_parser.parse(self._get_element_text(element, key))
 
-        add_as = key if not add_as else add_as
-        self.add(add_as, value)
+        if key == 'start_date':
+            self.start_date = value
+        elif key == 'end_date':
+            self.end_date = value
+        else:
+            add_as = key if not add_as else add_as
+            self.add(add_as, value)
+
+    def finalize(self):
+        if not self.start_date and self.end_date:
+            raise InvalidEventError()
+
+        delta = self.end_date - self.start_date
+        if delta.days > 1:
+            start_date = date(self.start_date.year, self.start_date.month, self.start_date.day)
+            end_date = date(self.end_date.year, self.end_date.month, self.end_date.day)
+        else:
+            start_date = self.start_date
+            end_date = self.end_date
+
+        if self.start_date > datetime.now(tz=EST()):
+            alarm = Alarm()
+            alarm.add("action", "DISPLAY")
+            alarm.add("description", "REMINDER")
+            alarm.add("trigger", timedelta(minutes=-15))
+            self.add_component(alarm)
+
+        self.add('dtstart', start_date)
+        self.add('dtend', end_date)
 
 
 class ExchangeRequest(object):
@@ -152,10 +246,16 @@ class FetchCalendar(ExchangeCommand):
             event = Event()
             event.add_text(item, 'subject', add_as='summary')
             event.add_text(item, 'location')
+            event.add_text(item, 'status')
             event.add_text(item, 'description')
-            event.add_date(item, 'start_date', add_as='dtstart')
-            event.add_date(item, 'end_date', add_as='dtend')
+            event.add_date(item, 'start_date')
+            event.add_date(item, 'end_date')
+            event.add_organizer(item)
 
-            calendar.add_component(event)
+            try:
+                event.finalize()
+                calendar.add_component(event)
+            except InvalidEventError:
+                print "Rejected event"
 
         return calendar
