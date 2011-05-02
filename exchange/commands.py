@@ -104,7 +104,12 @@ class Event(_Event):
         self.add('organizer', organizer, encode=0)
 
     def add_date(self, element, key, add_as=None):
-        value = date_parser.parse(self._get_element_text(element, key))
+        value = self._get_element_text(element, key)
+
+        if not value:
+            return None
+
+        value = date_parser.parse(value)
 
         if key == 'start_date':
             self.start_date = value
@@ -115,7 +120,7 @@ class Event(_Event):
             self.add(add_as, value)
 
     def finalize(self):
-        if not self.start_date and self.end_date:
+        if not self.start_date or not self.end_date:
             raise InvalidEventError()
 
         delta = self.end_date - self.start_date
@@ -256,6 +261,7 @@ class FetchCalendar(ExchangeCommand):
                 event.finalize()
                 calendar.add_component(event)
             except InvalidEventError:
-                print "Rejected event"
+                # Rejecting invalid event
+                pass
 
         return calendar
